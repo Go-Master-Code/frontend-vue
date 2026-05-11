@@ -9,7 +9,7 @@ export function useKaryawan() {
         loading.value=true;
         try {
             const res = await karyawanService.getAllKaryawan();
-            karyawanList.value = res.data.data
+            karyawanList.value = res.data.data || [] // jika res.data.data = null, maka return map kosong []
         } finally {
             loading.value = false;
         }

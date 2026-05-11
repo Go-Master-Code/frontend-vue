@@ -2,17 +2,17 @@
 import { ref, watch, nextTick } from "vue";
 
 // 🔥 Ref untuk akses langsung ke komponen input (dipakai untuk autofocus)
-const inputIDRef = ref(null);
-const inputNamaRef = ref(null);
+const inputTanggalRef = ref(null);
+const inputKeteranganRef = ref(null);
 
-// 🔥 Props dari parent (KaryawanView)
+// 🔥 Props dari parent (HariLiburView)
 // modelValue → untuk buka/tutup modal (v-model)
-// karyawan → data yang dipilih (null saat create)
+// hariLibur → data yang dipilih (null saat create)
 // mode → menentukan behavior (create | edit | delete)
 const props = defineProps({
-  modelValue: Boolean,
-  karyawan: { type: Object, default: () => null },
-  mode: { type: String, default: "edit" },
+    modelValue: Boolean,
+    hariLibur: { type: Object, default: () => null },
+    mode: { type: String, default: "edit" },
 });
 
 // 🔥 Emit event ke parent
@@ -22,27 +22,18 @@ const props = defineProps({
 const emit = defineEmits(["update:modelValue", "save", "delete"]);
 
 // === Reactive form (state lokal, tidak langsung mengubah props) ===
-const formID = ref("");
-const formNama = ref("");
-const formStatus = ref(false);
+const formTanggal = ref("");
+const formKeterangan = ref("");
 
 // 🔥 Utility: hanya angka (sanitize input)
 // penting karena user bisa paste string
-const onlyNumber = (value) => {
-  return value.replace(/\D/g, ""); // hapus semua selain angka
-};
-
-// 🔥 Watch formID → auto filter setiap perubahan
-// NOTE:
-// - lebih aman dari keypress karena handle paste juga
-// - slice(0,10) memastikan max 10 digit
-watch(formID, (val) => {
-  formID.value = onlyNumber(val).slice(0, 10);
-});
+// const onlyNumber = (value) => {
+//   return value.replace(/\D/g, ""); // hapus semua selain angka
+// };
 
 // === Sync props ke form saat modal dibuka ===
 // 🔥 Kenapa watch modelValue?
-// karena props.karyawan tidak selalu berubah (misal create = null terus)
+// karena props.hariLibur tidak selalu berubah (misal create = null terus)
 // jadi trigger terbaik adalah saat modal dibuka
 watch(
   () => props.modelValue,
@@ -51,28 +42,26 @@ watch(
 
     // 🔥 RESET ERROR SETIAP MODAL DIBUKA
     errors.value = {
-      id: "",
-      nama: "",
+        tanggal: "",
+        keterangan: "",
     };
 
     if (props.mode === "create") {
       // 🔥 Reset form saat create
-      formID.value = "";
-      formNama.value = "";
-      formStatus.value = true;
+      formTanggal.value = "";
+      formKeterangan.value = "";
 
-      // 🔥 Autofocus ke ID (UX lebih cepat)
+      // 🔥 Autofocus ke Tanggal (UX lebih cepat)
       await nextTick(); // tunggu DOM render
-      inputIDRef.value?.focus();
+      inputTanggalRef.value?.focus();
     } else {
       // 🔥 Isi form saat edit
-      formID.value = props.karyawan?.id || "";
-      formNama.value = props.karyawan?.nama || "";
-      formStatus.value = props.karyawan?.aktif || false;
+      formTanggal.value = props.hariLibur?.tanggal || "";
+      formKeterangan.value = props.hariLibur?.keterangan || "";
 
       // 🔥 Autofocus ke Nama (karena ID tidak boleh diubah)
       await nextTick();
-      inputNamaRef.value?.focus();
+      inputTanggalRef.value?.focus();
     }
   }
 );
@@ -80,14 +69,13 @@ watch(
 // 🔥 UX penting:
 // Error hilang otomatis saat user mulai memperbaiki input
 
-watch(formID, () => {
-    errors.value.id = "";
+watch(formTanggal, () => {
+    errors.value.tanggal = "";
 });
 
-watch(formNama, () => {
-    errors.value.nama = "";
+watch(formKeterangan, () => {
+    errors.value.keterangan = "";
 });
-
 
 // === Close modal ===
 // 🔥 gunakan emit agar parent yang kontrol state
@@ -99,7 +87,7 @@ const handleEnter = () => {
   if (props.mode === "delete") return;
 
   // 🔥 Validasi sederhana (frontend guard)
-  if (!formID.value || formID.value.length !== 10 || !formNama.value) return;
+  if (!formTanggal.value || !formKeterangan.value || formKeterangan.value.length > 100) return;
 
   save();
 };
@@ -107,24 +95,23 @@ const handleEnter = () => {
 // === Save handler (create & edit) ===
 const save = async () => {
   // reset error
-  errors.value = { id: "", nama: "" };
+  errors.value = { tanggal: "", keterangan: "" };
 
   emit("save", {
     payload: {
-      ...props.karyawan,
-      id: formID.value,
-      nama: formNama.value,
-      aktif: formStatus.value,
+      ...props.hariLibur,
+      tanggal: formTanggal.value,
+      keterangan: formKeterangan.value,
     }, // 🔥 CALLBACK ERROR (dari parent)
     // Modal tidak tahu API → hanya terima hasil
     onError: (errMsg) => {
       // 🔥 tangkap error dari parent DI SINI
-      if (errMsg.toLowerCase().includes("id")) {
-        errors.value.id = errMsg;
-      } else if (errMsg.toLowerCase().includes("nama")) {
-        errors.value.nama = errMsg;
-      } else {
-        errors.value.nama = errMsg;
+      if (errMsg.toLowerCase().includes("tanggal")) { //👉 cek apakah error mengandung kata "tanggal"
+        errors.value.tanggal = errMsg; //👉 kirim error ke field tanggal
+      } else if (errMsg.toLowerCase().includes("keterangan")) { //👉 kalau error terkait keterangan → masuk ke field keterangan
+        errors.value.keterangan = errMsg;
+      } else { //👉 kalau tidak jelas: tetap tampilkan error (biar user tidak blank), default ke field tanggal
+        errors.value.tanggal = errMsg;
       }
     }, // 🔥 CALLBACK SUCCESS
     onSuccess: () => {
@@ -135,15 +122,15 @@ const save = async () => {
 
 // === Delete handler ===
 const remove = () => {
-  emit("delete", props.karyawan);
+  emit("delete", props.hariLibur);
   closeModal();
 };
 
 // === ERROR STATE (INLINE VALIDATION) ===
 // 🔥 simpan error per field (biar bisa tampil di bawah input)
 const errors = ref({
-  id: "",
-  nama: "",
+  tanggal: "",
+  keterangan: "",
 });
 </script>
 
@@ -158,10 +145,10 @@ const errors = ref({
       <v-card-title class="text-h6">
         {{
           props.mode === "create"
-            ? "Tambah Karyawan"
+            ? "Tambah Hari Libur"
             : props.mode === "edit"
-            ? "Edit Karyawan"
-            : "Hapus Karyawan"
+            ? "Edit Hari Libur"
+            : "Hapus Hari Libur"
         }}
       </v-card-title>
 
@@ -177,61 +164,47 @@ const errors = ref({
                - maxlength + counter → UX guidance
                - inputmode → keyboard angka di mobile
           -->
-          <v-text-field
-            ref="inputIDRef"
-            label="ID (10 digit)"
-            v-model="formID"
-            density="compact"
-            variant="outlined"
-            maxlength="10"
-            autocomplete="off"
-            counter
-            inputmode="numeric"
-            :disabled="props.mode === 'edit'"
 
-            :error="!!errors.id"
-            :error-messages="errors.id"
+          <!-- 🔥 DATE INPUT -->
+            <!-- simple & clean (native date input) -->
+            <v-text-field
+                label="Tanggal"
+                v-model="formTanggal"
+                type="date"
+                class="mb-5"
+                density="compact"
+                variant="outlined"
+                hide-details="auto"
+                style="max-width: 180px"
 
-            :rules="[
-              v => !!v || 'ID wajib diisi',
-              v => v.length === 10 || 'ID harus 10 digit'
-            ]"
-          />
+                :error="!!errors.tanggal"
+                :error-messages="errors.tanggal"
+            />
 
-          <!-- 🔥 Nama -->
-          <!-- NOTE:
-               - autofocus saat edit
-               - bisa ditambahkan rules kalau mau wajib -->
-          <v-text-field
-            label="Nama"
-            ref="inputNamaRef"
-            v-model="formNama"
-            density="compact"
-            variant="outlined"
-            autocomplete="off"
+            <!-- 🔥 Keterangan -->
+            <!-- NOTE:
+                - autofocus saat edit
+                - bisa ditambahkan rules kalau mau wajib -->
+            <v-text-field
+                label="Keterangan"
+                ref="inputKeteranganRef"
+                v-model="formKeterangan"
+                density="compact"
+                variant="outlined"
+                autocomplete="off"
+                maxlength="100"
+                counter
 
-            :error="!!errors.nama"
-            :error-messages="errors.nama"
-          />
-
-          <!-- 🔥 Status -->
-          <!-- NOTE:
-               - warna dinamis biar lebih visual -->
-          <v-switch
-            v-model="formStatus"
-            label="Aktif"
-            :color="formStatus ? 'green' : 'red'"
-            density="compact"
-            inset
-          />
-
+                :error="!!errors.keterangan"
+                :error-messages="errors.keterangan"
+            />
         </div>
 
         <!-- DELETE CONFIRM -->
         <!-- 🔥 gunakan optional chaining untuk safety -->
         <div v-else>
-          Apakah yakin ingin menghapus karyawan
-          <strong>{{ props.karyawan?.nama }}</strong>?
+          Apakah yakin ingin menghapus hari libur
+          <strong>{{ props.hariLibur?.keterangan }}</strong>?
         </div>
 
       </v-card-text>
@@ -257,7 +230,7 @@ const errors = ref({
           color="primary"
           variant="elevated"
           size="small"
-          :disabled="!formID || formID.length !== 10 || !formNama"
+          :disabled="!formTanggal || formKeterangan.length > 100 || !formKeterangan"
           @click="save"
         >
           Simpan

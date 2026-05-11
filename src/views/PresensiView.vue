@@ -1,13 +1,78 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from "vue";
+import { watch } from "vue";
 import dayjs from "dayjs";
+import PresensiModal from "@/components/PresensiModal.vue"; // ⬅ pastikan path benar
+import * as presensiService from "@/services/presensiService";
 import { usePresensi } from "@/composables/usePresensi";
 
 // =========================
 // STATE DARI COMPOSABLE
 // =========================
-const { presensiList, loading, fetchPresensi } = usePresensi();
+const { presensiList, loading, fetchPresensi, selectedDate } = usePresensi();
+
+// 🔥 set default saat awal load
+selectedDate.value = dayjs().format("YYYY-MM-DD");
+
+// state untuk edit data di modal
+const selectedPresensi = ref(null);
+
+// state modal dan MODAL CONTROL
+const createModal = ref(false);
+const editModal = ref(false);
 // =========================
+
+// state CRUD
+// 🔥 CREATE
+const handleCreate = async ({ payload, onError, onSuccess }) => {
+  try {
+    // 🔥 kirim ke backend
+    await presensiService.createPresensi(payload);
+    await fetchPresensi(); // 🔥 refresh data table
+
+    onSuccess(); // 🔥 kasih tahu modal: sukses
+  } catch (err) {
+    // 🔥 ambil error dari backend (gin response)
+    const message =
+      err.response?.data?.error || // 🔥 spesifik (id sudah ada)
+      err.response?.data?.message || // 🔥 fallback
+      "Terjadi kesalahan";
+
+    onError(message); // 🔥 kirim balik ke modal
+  }
+};
+
+// 🔥 UPDATE
+// NOTE:
+// - await penting untuk memastikan request selesai sebelum refresh
+// - fetch ulang untuk sinkronisasi data backend
+const handleEdit = async ({ payload, onError, onSuccess }) => {
+  // console log untuk debug payload
+  // console.log("PAYLOAD FROM MODAL: ", payload)
+
+  try {
+    await presensiService.createPresensi(payload); // param endpoint go: id, model
+
+    await fetchPresensi();
+    // 🔥 tidak reset filter → UX konsisten
+
+    onSuccess();
+  } catch (err) {
+    const message =
+      err.response?.data?.error ||
+      "Gagal update data";
+
+    onError(message);
+  }
+};
+
+// === MODAL CONTROL ===
+// 🔥 Edit → clone object agar tidak langsung update UI sebelum save
+const openEditModal = (item) => {
+    selectedPresensi.value = { ...item }; // clone (best practice)
+    editModal.value = true;
+};
+
 // STATE LOCAL
 // =========================
 const now = ref(dayjs().format("HH:mm:ss"));
@@ -22,16 +87,12 @@ const search = ref("");
 const filteredPresensi = computed(() => {
   return presensiList.value.filter((item) => {
 
-    // kalau search kosong → tampilkan semua data
     if (!search.value) return true;
 
     const keyword = search.value.toLowerCase();
 
     return (
-      // cari berdasarkan nama
       item.karyawan_nama?.toLowerCase().includes(keyword) ||
-
-      // cari berdasarkan ID
       String(item.karyawan_id).includes(keyword)
     );
   });
@@ -41,133 +102,190 @@ const filteredPresensi = computed(() => {
 // LIFECYCLE
 // =========================
 onMounted(() => {
+  // 🔥 langsung load berdasarkan tanggal hari ini
   fetchPresensi();
+  // 🔥 tidak pakai parameter
+  // 👉 karena fetchPresensi sudah baca selectedDate
   interval = setInterval(() => now.value = dayjs().format("HH:mm:ss"), 1000);
 });
 
 onUnmounted(() => clearInterval(interval));
 
+// 🔥 reactive → setiap user ganti tanggal, data langsung refresh
+watch(selectedDate, () => {
+    fetchPresensi();
+    // 🔥 setiap tanggal berubah → auto reload
+});
+
 // =========================
-// HEADER TABLE (VUETIFY V3)
+// HEADER TABLE
 // =========================
 const headers = [
-  { title: "No", value: "no" },
-  { title: "ID Karyawan", value: "karyawan_id" },
-  { title: "Nama", value: "karyawan_nama" },
-  { title: "Tanggal", value: "tanggal" },
-  { title: "Waktu Masuk", value: "waktu_masuk" },
-  { title: "Waktu Pulang", value: "waktu_pulang" },
+  { title: "No", key: "no", sortable: false },
+  { title: "ID Karyawan", key: "karyawan_id" },
+  { title: "Nama", key: "karyawan_nama" },
+  { title: "Tanggal", key: "tanggal" },
+  { title: "Waktu Masuk", key: "waktu_masuk" },
+  { title: "Status", key: "terlambat" },
+  { title: "Waktu Pulang", key: "waktu_pulang" },
+  { title: 'Actions', key: 'actions', sortable: false },
 ];
 
+// =========================
+// PAGINATION (biar konsisten)
+// =========================
+const options = ref({
+  page: 1,
+  itemsPerPage: 5,
+});
 </script>
 
-<!-- ===OLD TEMPLATE=== -->
-<!-- <template>
-  <div style="max-width:600px; margin:auto; text-align:center;">
-    <h1>Presensi</h1>
-    <h2>{{ now }}</h2>
-
-    <div v-if="loading">Loading...</div>
-    
-    <div v-else>
-
-      <h3 style="margin-top:30px;">Riwayat Presensi</h3>
-      <table border="1" cellspacing="0" cellpadding="5" style="width:100%; margin-top:10px;">
-        <thead>
-          <tr>
-            <th>No</th>
-            <th>ID Karyawan</th>
-            <th>Nama</th>
-            <th>Tanggal</th>
-            <th>Waktu Masuk</th>
-            <th>Waktu Pulang</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(p, index) in presensiList" :key="p.id">
-            <td>{{ index + 1 }}</td>
-            <td>{{ p.karyawan_id }}</td>
-            <td>{{ p.karyawan_nama }}</td>
-            <td>{{ p.tanggal }}</td>
-            <td>{{ p.waktu_masuk || "-" }}</td>
-            <td>{{ p.waktu_pulang || "-" }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</template> -->
-
 <template>
-  <v-container fluid> <!--Tabel jadi lebih lebar-->
-    <v-row justify="center">
-      <v-col cols="12" md="10" lg="9">
+  <v-container fluid>
+    <v-card elevation="6" rounded="xl">
 
-        <!-- Card utama -->
-        <v-card elevation="3" class="pa-4">
-          <v-card-title class="text-h5 text-center">
-            Presensi Karyawan
-          </v-card-title>
+      <!-- === HEADER (SAMA SEPERTI KARYAWAN) === -->
+      <v-card-title class="d-flex flex-column gap-2">
 
-          <v-card-subtitle class="text-center">
-            Jam sekarang: {{ now }}
-          </v-card-subtitle>
+        <!-- TITLE -->
+        <div class="text-h4 font-weight-bold d-flex align-center gap-2">
+          <v-icon size="28">mdi-calendar-check</v-icon>
+          Presensi Harian
+        </div>
 
-          <v-card-text>
-            <v-progress-linear
-              v-if="loading"
-              indeterminate
-              color="primary"
+        <!-- ACTION -->
+        <div class="d-flex align-center gap-2">
+
+            <!-- 🔥 DATE FILTER -->
+            <!-- simple & clean (native date input) -->
+            <v-text-field
+                v-model="selectedDate"
+                label="Filter Tanggal"
+                type="date"
+                density="compact"
+                variant="outlined"
+                hide-details
+                style="max-width: 180px"
             />
             
-            <div v-else>
-              <!-- ========================= -->
-              <!-- 🔍 SEARCH -->
-              <!-- ========================= -->
-              <v-row class="mb-4">
-                <v-col cols="12" md="6">
-                  <v-text-field
-                    v-model="search"
-                    label="Cari nama / ID karyawan"
-                    prepend-inner-icon="mdi-magnify"
-                    variant="outlined"
-                    clearable
-                    density="comfortable"
-                  />
-                </v-col>
-                <!--density: mengatur tinggi search box (bisa comfortable atau compact untuk lebih kecil)-->
-              </v-row>
+            <!-- SEARCH -->
+            <v-text-field
+                v-model="search"
+                placeholder="Cari ID / Nama Karyawan..."
+                prepend-inner-icon="mdi-magnify"
+                density="compact"
+                variant="outlined"
+                hide-details
+                clearable
+                class="flex-grow-1"
+                autocomplete="off"
+            />
 
-              <!-- ========================= -->
-              <!-- 📊 DATA TABLE -->
-              <!-- ========================= -->
-              <v-data-table
-                :headers="headers"
-                :items="filteredPresensi"
-                :items-per-page="5"
-              >
+            <!-- BUTTON TAMBAH -->
+            <!-- 🔥 icon + text → lebih mudah dikenali -->
+            <v-btn color="primary" @click="createModal = true">
+                <v-icon start>mdi-plus</v-icon>
+                Tambah
+            </v-btn>
 
-                <!-- NOMOR OTOMATIS -->
-                <template #item.no="{ index }">
-                  {{ index + 1 }}
-                </template>
+        </div>
+      </v-card-title>
 
-                <!-- HANDLE NULL -->
-                <template #item.waktu_masuk="{ item }">
-                  {{ item.waktu_masuk || '-' }}
-                </template>
+      <v-divider class="mb-2" />
 
-                <template #item.waktu_pulang="{ item }">
-                  {{ item.waktu_pulang || '-' }}
-                </template>
+      <!-- === TABLE === -->
+      <v-data-table
+        v-model:options="options"
+        :headers="headers"
+        :items="filteredPresensi"
+        :loading="loading"
+        :items-per-page-options="[5, 10, 25, 50, { title: 'All', value: -1 }]"
+        class="modern-table"
+        hover
+        density="comfortable"
+        rounded="lg"
+      >
 
-              </v-data-table>
+        <!-- Loading -->
+        <template #loading>
+          <v-skeleton-loader type="table-row@5" />
+        </template>
 
-            </div>
-          </v-card-text>
-        </v-card>
+        <!-- NOMOR -->
+        <template #item.no="{ index }">
+          <v-chip size="small" color="primary" variant="tonal">
+            {{
+              options.itemsPerPage === -1
+                ? index + 1
+                : index + 1 + (options.page - 1) * options.itemsPerPage
+            }}
+          </v-chip>
+        </template>
 
-      </v-col>
-    </v-row>
+        <!-- ACTIONS -->
+        <!-- 🔥 tombol dengan icon (UX lebih baik) -->
+        <template #item.actions="{ item }">
+          <div class="d-flex gap-2">
+              <v-btn size="small" color="primary" @click="openEditModal(item)">
+                <v-icon start>mdi-square-edit-outline</v-icon>
+                Edit
+              </v-btn>
+          </div>
+        </template>
+
+        <!-- HANDLE NULL -->
+        <template #item.waktu_masuk="{ item }">
+          {{ item.waktu_masuk || '-' }}
+        </template>
+
+        <template #item.waktu_pulang="{ item }">
+          {{ item.waktu_pulang || '-' }}
+        </template>
+        
+        <template #item.terlambat="{ item }">
+        <v-chip
+            :color="item.terlambat ? 'red' : 'green'"
+            size="small"
+            variant="flat"
+        >
+            {{ item.terlambat ? 'Terlambat' : 'OK' }}
+        </v-chip>
+        
+        <!-- <v-chip
+            :color="item.terlambat ? 'red' : 'green'"
+            size="small"
+            variant="tonal"
+        >
+            <v-icon start size="16">
+            {{ item.terlambat ? 'mdi-alert-circle' : 'mdi-check-circle' }}
+            </v-icon>
+
+            {{ item.terlambat ? 'Terlambat' : 'Tepat Waktu' }}
+        </v-chip> -->
+
+        </template>
+      </v-data-table>
+
+    </v-card>
+
+    <!-- === MODAL COMPONENTS === -->
+    <!-- 🔥 reusable modal (clean architecture) -->
+
+    <!-- CREATE -->
+    <PresensiModal
+        v-model="createModal"
+        :mode="'create'"
+        :Presensi="null"
+        @save="handleCreate"
+    />
+
+    <!-- EDIT -->
+    <PresensiModal
+        v-model="editModal"
+        :mode="'edit'"
+        :Presensi="selectedPresensi"
+        @save="handleEdit"
+    />
+
   </v-container>
 </template>
