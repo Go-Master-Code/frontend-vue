@@ -5,6 +5,9 @@
   import * as authService from "@/services/authService";
   import { useAuth } from "@/composables/useAuth";
 
+  // reset session setiap kali login ulang
+  import { resetSessionRedirect } from "@/services/api";
+
   // import logo
   import logo from "@/assets/logo.png";
 
@@ -56,6 +59,10 @@
 
       // setelah login sukses, simpan token dan role
       setToken(token);
+
+      // 🔥 reset interceptor state (session login)
+      resetSessionRedirect();
+
       setRole(res.data.data.role_nama) // ambil sesuai response api Login (cek postman)
 
       // redirect
